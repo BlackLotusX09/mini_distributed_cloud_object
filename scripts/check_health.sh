@@ -9,3 +9,4 @@ for port in 8000 8001 8002 8003 8004; do
   fi
 done
 exit $fail
+

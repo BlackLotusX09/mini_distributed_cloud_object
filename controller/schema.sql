@@ -48,3 +48,4 @@ CREATE TABLE IF NOT EXISTS custom_metadata (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_object   ON chunks(object_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_replicas_worker ON replicas(worker_id);
+
