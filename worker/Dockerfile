@@ -1,9 +1,10 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY app.py ./
-ENV PYTHONUNBUFFERED=1 PORT=8001
-EXPOSE 8001
+COPY app.py config.py heartbeat.py ./
+COPY storage ./storage
+RUN mkdir -p /data
+ENV PYTHONUNBUFFERED=1 PORT=8000 DATA_DIR=/data
+EXPOSE 8000
 HEALTHCHECK --interval=5s --timeout=3s --start-period=3s --retries=5 \
-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health',timeout=2).status==200 else 1)"
+  CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:%s/health' % os.environ.get('PORT','8000'), timeout=2)"
 CMD ["python", "app.py"]
-

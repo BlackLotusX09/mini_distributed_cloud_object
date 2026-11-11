@@ -6,7 +6,7 @@ pids=()
 (cd controller && DB_PATH=$T/m.db PORT=8000 exec python3 app.py >$T/c.log 2>&1) & pids+=($!)
 for i in 1 2 3 4; do
   (cd worker && WORKER_ID=worker$i PORT=800$i DATA_DIR=$T/w$i CONTROLLER_URL=http://localhost:8000 \
-    HEARTBEAT_SEC=1 WORKER_ADDRESS=http://localhost:800$i exec python3 app.py >$T/w$i.log 2>&1) & pids+=($!)
+    HEARTBEAT_INTERVAL=1s exec python3 app.py >$T/w$i.log 2>&1) & pids+=($!)
   [ "$i" = 2 ] && w2=$!
 done
 trap 'kill "${pids[@]}" 2>/dev/null' EXIT

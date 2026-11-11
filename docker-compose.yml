@@ -27,49 +27,57 @@ services:
     <<: *worker
     container_name: worker1
     ports:
-      - "8001:8001"
+      - "8001:8000"
     environment:
       WORKER_ID: worker1
-      PORT: "8001"
+      PORT: "8000"
+      DATA_DIR: /data
       CONTROLLER_URL: http://controller:8000
+      HEARTBEAT_INTERVAL: 5s
     volumes:
-      - worker1-data:/data/chunks
+      - worker1-data:/data
 
   worker2:
     <<: *worker
     container_name: worker2
     ports:
-      - "8002:8001"
+      - "8002:8000"
     environment:
       WORKER_ID: worker2
-      PORT: "8001"
+      PORT: "8000"
+      DATA_DIR: /data
       CONTROLLER_URL: http://controller:8000
+      HEARTBEAT_INTERVAL: 5s
     volumes:
-      - worker2-data:/data/chunks
+      - worker2-data:/data
 
   worker3:
     <<: *worker
     container_name: worker3
     ports:
-      - "8003:8001"
+      - "8003:8000"
     environment:
       WORKER_ID: worker3
-      PORT: "8001"
+      PORT: "8000"
+      DATA_DIR: /data
       CONTROLLER_URL: http://controller:8000
+      HEARTBEAT_INTERVAL: 5s
     volumes:
-      - worker3-data:/data/chunks
+      - worker3-data:/data
 
   worker4:
     <<: *worker
     container_name: worker4
     ports:
-      - "8004:8001"
+      - "8004:8000"
     environment:
       WORKER_ID: worker4
-      PORT: "8001"
+      PORT: "8000"
+      DATA_DIR: /data
       CONTROLLER_URL: http://controller:8000
+      HEARTBEAT_INTERVAL: 5s
     volumes:
-      - worker4-data:/data/chunks
+      - worker4-data:/data
 
 volumes:
   controller-data:
@@ -81,4 +89,3 @@ volumes:
 networks:
   dfs-network:
     driver: bridge
-

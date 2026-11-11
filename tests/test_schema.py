@@ -5,10 +5,15 @@ import unittest
 SCHEMA = os.path.join(os.path.dirname(__file__), "..", "controller", "schema.sql")
 
 
+def schema_sql():
+    with open(SCHEMA) as f:
+        return f.read()
+
+
 def fresh():
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(open(SCHEMA).read())
+    conn.executescript(schema_sql())
     return conn
 
 
@@ -19,7 +24,7 @@ class SchemaTest(unittest.TestCase):
 
     def test_idempotent(self):
         conn = fresh()
-        conn.executescript(open(SCHEMA).read())
+        conn.executescript(schema_sql())
 
     def test_cascade_delete(self):
         c = fresh()

@@ -69,10 +69,24 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_json()
         except ValueError:
             return self._json(400, {"error": "invalid json"})
-        if self.path in ("/internal/workers/register", "/internal/workers/heartbeat"):
-            wid, addr = body.get("id"), body.get("address")
+        if self.path == "/internal/workers/heartbeat":
+            wid = body.get("worker_id") or body.get("id")
+            if not wid:
+                return self._json(400, {"error": "worker_id required"})
+            with _db_lock:
+                cur = self.conn.execute(
+                    "UPDATE workers SET status='ACTIVE', last_heartbeat=CURRENT_TIMESTAMP "
+                    "WHERE id=?",
+                    (wid,),
+                )
+                self.conn.commit()
+            if cur.rowcount == 0:  # unknown worker: ask it to re-register
+                return self._json(404, {"error": "WORKER_UNKNOWN"})
+            return self._json(200, {"ok": True})
+        if self.path == "/internal/workers/register":
+            wid, addr = body.get("worker_id") or body.get("id"), body.get("address")
             if not wid or not addr:
-                return self._json(400, {"error": "id and address required"})
+                return self._json(400, {"error": "worker_id and address required"})
             with _db_lock:
                 self.conn.execute(
                     "INSERT INTO workers (id, address, status, last_heartbeat) "
