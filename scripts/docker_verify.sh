@@ -12,7 +12,7 @@ W1=http://localhost:8001; W2=http://localhost:8002; W3=http://localhost:8003
 wait_healthy() {  # all workers healthy and controller sees 4 active
   for _ in $(seq 1 60); do
     if bash scripts/check_health.sh >/dev/null 2>&1 \
-       && curl -s localhost:8000/health | grep -q '"active_workers": 4'; then return 0; fi
+       && curl -s localhost:8000/health | grep -Eq '"active_workers": ?4'; then return 0; fi
     sleep 1
   done
   return 1
@@ -27,9 +27,9 @@ head -c 200000  /dev/urandom > "$T/persist.bin"
 wait_healthy && ok "all 5 containers healthy; controller sees 4 workers" || { bad "startup" "stack not healthy"; exit 1; }
 
 echo "--- registration"
-addrs=$(curl -s localhost:8000/internal/workers)
+addrs=$(curl -s localhost:8000/api/v1/admin/workers)
 for i in 1 2 3 4; do
-  echo "$addrs" | grep -q "\"address\": \"http://worker$i:8000\"" \
+  echo "$addrs" | grep -Eq "\"address\": ?\"http://worker$i:8000\"" \
     && ok "worker$i advertises http://worker$i:8000" || bad "worker$i address" "$addrs"
 done
 echo "$addrs" | grep -Eq 'localhost|127\.0\.0\.1' && bad "no localhost in addresses" "$addrs" || ok "no localhost/127.0.0.1 advertised"

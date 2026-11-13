@@ -14,12 +14,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      PORT: "8000"
-      DB_PATH: /data/metadata/metadata.db
+      DB_PATH: /data/controller.db
+      HEARTBEAT_TIMEOUT: "15"
+      LIVENESS_CHECK_INTERVAL: "3"
       REPLICATION_FACTOR: "2"
-      HEARTBEAT_TIMEOUT_SEC: "10"
+      CHUNK_SIZE: "1048576"
     volumes:
-      - controller-data:/data/metadata
+      - controller-data:/data
     networks:
       - dfs-network
 

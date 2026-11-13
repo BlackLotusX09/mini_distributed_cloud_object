@@ -3,15 +3,41 @@
 Run everything from the project root. Docker Desktop must be running for sections 2–8.
 
 ## 1. Automated tests (no Docker needed)
+One-time setup (a virtualenv with the controller and test dependencies):
 ```sh
-python3 -m unittest discover -s tests -v     # expect: Ran 49 tests ... OK
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+```
+```sh
+.venv/bin/python -m pytest tests -q          # expect: 120 passed
 ```
 To run only some of them:
 ```sh
-python3 -m unittest tests.test_storage       # storage engine, incl. SIGKILL mid-write
-python3 -m unittest tests.test_worker_http   # HTTP API
-python3 -m unittest tests.test_heartbeat     # config + registration/heartbeat
-python3 -m unittest tests.test_schema        # SQLite schema
+.venv/bin/python -m pytest tests/test_db.py -v          # SQLite layer (FKs, cascade, rollback, persistence)
+.venv/bin/python -m pytest tests/test_placement.py -v   # placement engine (pure function)
+.venv/bin/python -m pytest tests/test_api.py -v         # controller API, liveness monitor, grace period
+.venv/bin/python -m pytest tests/test_storage.py tests/test_worker_http.py tests/test_heartbeat.py -v   # worker
+```
+
+## 1b. Integration check without Docker (real controller + 4 workers as processes)
+```sh
+bash scripts/local_smoke.sh      # expect: passed=20 failed=0 (~35 s; uses ports 8000-8004)
+```
+It covers registration, the error contract, placement, killing a worker (DEAD), restarting it (ALIVE),
+and a controller restart that keeps state with no false DEAD workers.
+
+## 1c. Controller admin endpoints (stack running)
+```sh
+curl -s localhost:8000/api/v1/admin/workers | python3 -m json.tool   # worker_id, address, status, last_heartbeat_age, dead_since, chunk_count
+curl -s localhost:8000/api/v1/admin/placement-test                   # {"replication_factor":2,"workers":[two distinct ALIVE ids]}
+docker stop worker2; sleep 20                                        # default timeout is 15 s
+curl -s localhost:8000/api/v1/admin/workers | python3 -m json.tool   # worker2 DEAD with dead_since set
+docker compose logs controller | grep -E 'ALIVE -> DEAD|DEAD -> ALIVE|registered'
+docker start worker2; sleep 8                                        # worker2 back to ALIVE
+docker compose stop worker1 worker2 worker3; sleep 20
+curl -i localhost:8000/api/v1/admin/placement-test                   # 503 INSUFFICIENT_WORKERS "need 2 healthy workers, have 1"
+docker compose start worker1 worker2 worker3
+curl -i -X POST localhost:8000/internal/workers/heartbeat -H 'Content-Type: application/json' -d '{"worker_id":"ghost"}'   # 404 UNKNOWN_WORKER
+curl -i -X POST localhost:8000/internal/workers/register  -H 'Content-Type: application/json' -d '{"worker_id":"x"}'       # 400 INVALID_REQUEST
 ```
 
 ## 2. Start the stack
@@ -19,7 +45,7 @@ python3 -m unittest tests.test_schema        # SQLite schema
 docker compose up --build -d
 docker compose ps                  # expect 5 containers "healthy" after ~10-15 s
 bash scripts/check_health.sh       # expect 5 x OK
-curl -s localhost:8000/internal/workers   # expect 4 workers, address http://workerN:8000
+curl -s localhost:8000/api/v1/admin/workers   # expect 4 workers, address http://workerN:8000
 ```
 Ports: controller `8000`, worker1–4 `8001`–`8004`.
 
@@ -101,9 +127,9 @@ docker stop worker2
 bash scripts/check_health.sh                      # :8002 FAIL, others OK
 docker start worker2; sleep 8
 bash scripts/check_health.sh                      # 5 x OK
-curl -s localhost:8000/internal/workers           # worker2 ACTIVE again
+curl -s localhost:8000/api/v1/admin/workers   # worker2 ALIVE again
 ```
-Registration check (no localhost advertised): `curl -s localhost:8000/internal/workers | grep -c localhost` → `0`.
+Registration check (no localhost advertised): `curl -s localhost:8000/api/v1/admin/workers | grep -c localhost` → `0`.
 
 ## 9. Inspecting logs and disk
 ```sh
