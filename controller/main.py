@@ -15,21 +15,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import db
 import settings as settings_mod
+from errors import ApiError, error_response
+from lifecycle import cleanup_stale_pending
+from objects_api import router as objects_router
 from placement import InsufficientWorkersError, choose_workers
+from worker_client import WorkerClient
 
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("controller")
-
-
-# ----------------------------------------------------------------- errors
-class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str):
-        self.status, self.code, self.message = status, code, message
-
-
-def error_response(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"error": code, "message": message})
 
 
 # ------------------------------------------------------------ validation
@@ -84,6 +78,16 @@ def sweep_dead_workers(now: float, timeout: float) -> List[Tuple[str, float]]:
     return transitions
 
 
+async def _run_janitor(client: WorkerClient, cfg: settings_mod.Settings):
+    """Startup janitor: roll back objects stuck in PENDING past the TTL."""
+    try:
+        await cleanup_stale_pending(client, cfg.pending_object_ttl_seconds)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("startup janitor failed")
+
+
 async def liveness_monitor(cfg: settings_mod.Settings):
     started = time.monotonic()
     while True:
@@ -99,7 +103,8 @@ async def liveness_monitor(cfg: settings_mod.Settings):
 
 
 # -------------------------------------------------------------------- app
-def create_app(cfg: Optional[settings_mod.Settings] = None) -> FastAPI:
+def create_app(cfg: Optional[settings_mod.Settings] = None, worker_transport=None) -> FastAPI:
+    """`worker_transport`: optional httpx transport (tests inject fake workers here)."""
     cfg = cfg or settings_mod.load()
 
     @asynccontextmanager
@@ -110,16 +115,25 @@ def create_app(cfg: Optional[settings_mod.Settings] = None) -> FastAPI:
             cfg.db_path, cfg.heartbeat_timeout, cfg.liveness_check_interval,
             cfg.replication_factor, cfg.chunk_size,
         )
-        task = asyncio.create_task(liveness_monitor(cfg), name="liveness-monitor")
+        client = WorkerClient(timeout=cfg.upload_worker_timeout, transport=worker_transport)
+        await client.start()
+        app.state.worker_client = client
+        monitor = asyncio.create_task(liveness_monitor(cfg), name="liveness-monitor")
+        janitor = asyncio.create_task(_run_janitor(client, cfg), name="pending-janitor")
+        app.state.janitor_task = janitor
         try:
             yield
         finally:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+            for task in (monitor, janitor):
+                task.cancel()
+            for task in (monitor, janitor):
+                with suppress(asyncio.CancelledError):
+                    await task
+            await client.close()
 
     app = FastAPI(title="Object Store Controller", lifespan=lifespan)
     app.state.cfg = cfg
+    app.include_router(objects_router)
 
     # ---- error handlers: every error is {"error": CODE, "message": ...}
     @app.exception_handler(ApiError)
@@ -139,7 +153,8 @@ def create_app(cfg: Optional[settings_mod.Settings] = None) -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(_req, exc: StarletteHTTPException):
-        codes = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
+        codes = {400: "INVALID_REQUEST", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED",
+                 413: "PAYLOAD_TOO_LARGE"}
         return error_response(exc.status_code, codes.get(exc.status_code, "HTTP_ERROR"), str(exc.detail))
 
     @app.exception_handler(Exception)

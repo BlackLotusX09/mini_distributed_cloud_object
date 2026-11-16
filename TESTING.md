@@ -8,22 +8,27 @@ One-time setup (a virtualenv with the controller and test dependencies):
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 ```sh
-.venv/bin/python -m pytest tests -q          # expect: 120 passed
+.venv/bin/python -m pytest tests -q          # expect: 189 passed
 ```
 To run only some of them:
 ```sh
-.venv/bin/python -m pytest tests/test_db.py -v          # SQLite layer (FKs, cascade, rollback, persistence)
-.venv/bin/python -m pytest tests/test_placement.py -v   # placement engine (pure function)
-.venv/bin/python -m pytest tests/test_api.py -v         # controller API, liveness monitor, grace period
+.venv/bin/python -m pytest tests/test_db.py -v               # SQLite layer (FKs, cascade, rollback, persistence)
+.venv/bin/python -m pytest tests/test_placement.py -v        # placement engine (pure function)
+.venv/bin/python -m pytest tests/test_api.py -v              # controller registry, liveness monitor, grace period
+.venv/bin/python -m pytest tests/test_worker_client.py -v    # worker HTTP client & typed exceptions
+.venv/bin/python -m pytest tests/test_replication.py -v      # single-chunk replication & distinct-worker retries
+.venv/bin/python -m pytest tests/test_upload_download.py -v  # streaming upload, rollback, janitor, download & fallback
+.venv/bin/python -m pytest tests/test_lifecycle.py -v        # metadata GET/PATCH, listing pagination, two-phase delete
 .venv/bin/python -m pytest tests/test_storage.py tests/test_worker_http.py tests/test_heartbeat.py -v   # worker
 ```
 
 ## 1b. Integration check without Docker (real controller + 4 workers as processes)
 ```sh
-bash scripts/local_smoke.sh      # expect: passed=20 failed=0 (~35 s; uses ports 8000-8004)
+bash scripts/local_smoke.sh      # expect: passed=34 failed=0 (~35 s; uses ports 8000-8004)
 ```
 It covers registration, the error contract, placement, killing a worker (DEAD), restarting it (ALIVE),
-and a controller restart that keeps state with no false DEAD workers.
+a controller restart keeping state with no false DEAD workers, and a full data-plane cycle (1.5 MiB upload,
+list, metadata GET/PATCH, download, worker disk replica verification, delete, and 0-byte upload/download).
 
 ## 1c. Controller admin endpoints (stack running)
 ```sh

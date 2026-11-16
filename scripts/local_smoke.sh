@@ -69,6 +69,54 @@ expect "workers still known after controller restart" worker1 "$([ "$(status_of 
 sleep 4
 for i in 1 2 3 4; do expect "worker$i ALIVE after controller restart" ALIVE "$(status_of worker$i status)"; done
 
+echo "--- data plane (upload, metadata, patch, list, download, delete)"
+for i in 1 2 3 4; do
+  curl -sf -X POST localhost:8000/internal/workers/register \
+    -H 'Content-Type: application/json' \
+    -d "{\"worker_id\":\"worker$i\",\"address\":\"http://127.0.0.1:800$i\"}" >/dev/null
+done
+head -c 1572864 /dev/urandom > "$T/sample.bin"
+up=$(curl -s -w '\n%{http_code}' -X POST localhost:8000/api/v1/objects \
+  -F "file=@$T/sample.bin" -F 'metadata={"env":"smoke"}')
+up_code=$(echo "$up" | tail -n1)
+up_body=$(echo "$up" | sed '$d')
+expect "POST /api/v1/objects (1.5 MiB) -> 201" 201 "$up_code"
+oid=$(echo "$up_body" | $PY -c 'import sys,json; print(json.load(sys.stdin)["object_id"])')
+cc=$(echo "$up_body" | $PY -c 'import sys,json; print(json.load(sys.stdin)["chunk_count"])')
+expect "chunk_count is 2" 2 "$cc"
+
+total=$(curl -s localhost:8000/api/v1/objects | $PY -c 'import sys,json; print(json.load(sys.stdin)["total"])')
+expect "GET /api/v1/objects total=1" 1 "$total"
+
+meta_env=$(curl -s "localhost:8000/api/v1/objects/$oid/metadata" | $PY -c 'import sys,json; print(json.load(sys.stdin)["custom"]["env"])')
+expect "GET metadata custom.env=smoke" smoke "$meta_env"
+
+patched=$(curl -s -X PATCH "localhost:8000/api/v1/objects/$oid/metadata" \
+  -H 'Content-Type: application/json' -d '{"env":"prod","note":"hi"}')
+patch_ok=$(echo "$patched" | $PY -c 'import sys,json; c=json.load(sys.stdin)["custom"]; print(c["env"], c["note"])')
+expect "PATCH metadata updates custom" "prod hi" "$patch_ok"
+
+curl -sf "localhost:8000/api/v1/objects/$oid" -o "$T/downloaded.bin"
+cmp -s "$T/sample.bin" "$T/downloaded.bin" && ok "GET /api/v1/objects/{id} matches uploaded bytes" || bad "download mismatch" "files differ"
+
+chunks_on_disk=$(find "$T"/w{1,2,3,4} -name '*.chunk' | wc -l | tr -d ' ')
+expect "4 chunk replicas stored across workers (2 chunks * R=2)" 4 "$chunks_on_disk"
+
+del_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "localhost:8000/api/v1/objects/$oid")
+expect "DELETE /api/v1/objects/{id} -> 204" 204 "$del_code"
+expect "GET after DELETE -> 404" 404 "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8000/api/v1/objects/$oid")"
+chunks_after=$(find "$T"/w{1,2,3,4} -name '*.chunk' | wc -l | tr -d ' ')
+expect "worker chunk files cleaned up after DELETE" 0 "$chunks_after"
+
+: > "$T/empty.bin"
+z_code=$(curl -s -w '\n%{http_code}' -X POST localhost:8000/api/v1/objects -F "file=@$T/empty.bin")
+z_http=$(echo "$z_code" | tail -n1)
+z_id=$(echo "$z_code" | sed '$d' | $PY -c 'import sys,json; print(json.load(sys.stdin)["object_id"])')
+expect "0-byte upload -> 201" 201 "$z_http"
+expect "0-byte download -> 200" 200 "$(curl -s -o "$T/z.out" -w '%{http_code}' "localhost:8000/api/v1/objects/$z_id")"
+[ ! -s "$T/z.out" ] && ok "0-byte download body is empty" || bad "0-byte body" "non-empty"
+expect "0-byte delete -> 204" 204 "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "localhost:8000/api/v1/objects/$z_id")"
+
 echo "--- controller log (transitions only)"
 grep -E 'ALIVE -> DEAD|DEAD -> ALIVE|registered' $T/controller.log | tail -n 12 || true
 
