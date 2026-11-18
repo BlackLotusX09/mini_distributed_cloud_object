@@ -1,6 +1,6 @@
 # Design Doc: Mini Distributed Object Store (Day 1)
 
-Condensed from `Distributed Object Store Architecture Design.md`.
+Condensed from `docs/archive/Distributed Object Store Architecture Design.md`.
 
 ## Components
 | Component | Role |

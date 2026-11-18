@@ -8,18 +8,22 @@ One-time setup (a virtualenv with the controller and test dependencies):
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 ```sh
-.venv/bin/python -m pytest tests -q          # expect: 189 passed
+.venv/bin/python -m pytest tests/unit -q     # isolated unit & hardening suite (no Docker required)
+.venv/bin/python -m pytest tests -q          # full unit + integration suite (requires Docker stack running)
 ```
 To run only some of them:
 ```sh
-.venv/bin/python -m pytest tests/test_db.py -v               # SQLite layer (FKs, cascade, rollback, persistence)
-.venv/bin/python -m pytest tests/test_placement.py -v        # placement engine (pure function)
-.venv/bin/python -m pytest tests/test_api.py -v              # controller registry, liveness monitor, grace period
-.venv/bin/python -m pytest tests/test_worker_client.py -v    # worker HTTP client & typed exceptions
-.venv/bin/python -m pytest tests/test_replication.py -v      # single-chunk replication & distinct-worker retries
-.venv/bin/python -m pytest tests/test_upload_download.py -v  # streaming upload, rollback, janitor, download & fallback
-.venv/bin/python -m pytest tests/test_lifecycle.py -v        # metadata GET/PATCH, listing pagination, two-phase delete
-.venv/bin/python -m pytest tests/test_storage.py tests/test_worker_http.py tests/test_heartbeat.py -v   # worker
+.venv/bin/python -m pytest tests/unit/test_db.py -v               # SQLite layer (FKs, cascade, rollback, persistence)
+.venv/bin/python -m pytest tests/unit/test_placement.py -v        # placement engine (pure function)
+.venv/bin/python -m pytest tests/unit/test_api.py -v              # controller registry, liveness monitor, grace period
+.venv/bin/python -m pytest tests/unit/test_worker_client.py -v    # worker HTTP client & typed exceptions
+.venv/bin/python -m pytest tests/unit/test_replication.py -v      # single-chunk replication & distinct-worker retries
+.venv/bin/python -m pytest tests/unit/test_upload_download.py -v  # streaming upload, rollback, janitor, download & fallback
+.venv/bin/python -m pytest tests/unit/test_lifecycle.py -v        # metadata GET/PATCH, listing pagination, two-phase delete
+.venv/bin/python -m pytest tests/unit/test_repair.py tests/unit/test_reconciliation.py tests/unit/test_scrubber.py -v
+.venv/bin/python -m pytest tests/unit/test_cli.py tests/unit/test_hardening.py -v
+.venv/bin/python -m pytest tests/unit/test_storage.py tests/unit/test_worker_http.py tests/unit/test_heartbeat.py -v   # worker
+.venv/bin/python -m pytest tests/integration -m "not slow" -v     # live cluster endpoint tests
 ```
 
 ## 1b. Integration check without Docker (real controller + 4 workers as processes)
