@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> OK : Upload ACK / Repair Copy / Unrecorded Valid Rejoin Adopted
+
+    OK --> CORRUPT : Read checksum mismatch or 404/409
+    OK --> CORRUPT : Scrub bit-rot or DB checksum mismatch
+    OK --> CORRUPT : Rejoin inventory checksum mismatch
+    OK --> PENDING_DELETE : Object DELETE started (logical delete)
+
+    CORRUPT --> PENDING_DELETE : Replaced by repair when target worker was DEAD/unreachable
+    CORRUPT --> OK : Worker rejoins with intact disk checksum matching DB
+    CORRUPT --> [*] : Deleted on worker disk after repair replaces replica
+
+    PENDING_DELETE --> [*] : Worker DELETE succeeds (during delete, repair, or rejoin reconciliation)
+    OK --> [*] : Deleted on worker / trimmed over-replication / missing on disk at rejoin

@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant Ctrl as Controller (FastAPI)
+    participant DB as SQLite (WAL)
+    participant W1 as Worker A (Alive)
+    participant W2 as Worker B (Alive)
+    participant W3 as Worker C (Alive Retry)
+
+    C->>Ctrl: POST /api/v1/objects (multipart stream)
+    Ctrl->>DB: list_alive_with_counts()
+    alt fewer than R=2 alive workers
+        Ctrl-->>C: 503 INSUFFICIENT_WORKERS (zero DB rows)
+    else >= 2 alive workers
+        Ctrl->>DB: INSERT objects (status=PENDING) + custom_metadata
+        loop For each 1 MiB chunk idx = 0..N-1
+            Ctrl->>Ctrl: Read up to 1 MiB + compute SHA-256
+            Ctrl->>DB: choose_workers (fewest OK chunks, distinct)
+            par Parallel chunk dispatch
+                Ctrl->>W1: PUT /internal/chunks/{id} (X-Chunk-Checksum)
+                Ctrl->>W2: PUT /internal/chunks/{id} (X-Chunk-Checksum)
+            end
+            alt Both ACK (200/201)
+                Ctrl->>DB: BEGIN IMMEDIATE -> INSERT chunk + 2 OK replicas -> COMMIT
+            else Partial failure on W2
+                W1-->>Ctrl: 201 Created
+                W2-->>Ctrl: Error / Timeout
+                Ctrl->>W3: Retry missing replica (distinct untried worker)
+                alt Retry succeeds
+                    W3-->>Ctrl: 201 Created
+                    Ctrl->>DB: INSERT chunk + replicas (W1, W3)
+                else Retries exhausted -> Rollback
+                    Ctrl->>W1: Best-effort DELETE partial chunks
+                    Ctrl->>W2: Best-effort DELETE partial chunks
+                    Ctrl->>DB: Drop cleaned rows / mark unreachable PENDING_DELETE; DELETE or DELETING object
+                    Ctrl-->>C: 503 STORAGE_UNAVAILABLE
+                end
+            end
+        end
+        Ctrl->>DB: UPDATE objects SET size, checksum, chunk_count, status=COMMITTED
+        Ctrl-->>C: 201 Created (object_id + metadata)
+    end

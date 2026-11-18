@@ -1,0 +1,33 @@
+# Python & virtualenv
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS & editors
+.DS_Store
+.vscode/
+.idea/
+
+# Runtime SQLite databases & worker volume data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+data/
+tmp/
+
+# Secrets & local env overrides
+.env
+.env.*
+
+# Generated large demo binaries (recreated by scripts/ensure_demo_files.py)
+demo/files/*.bin
+demo/files/sample.txt
+demo/files/sample.png
+demo/files/archive.zip

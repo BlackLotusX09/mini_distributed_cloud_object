@@ -1,0 +1,19 @@
+flowchart TB
+    Client["Client / CLI (client/objstore.py) or curl"]
+    Client -->|"HTTP REST API :8000<br/>X-Request-ID"| Controller
+
+    subgraph DockerNet["Docker Network (dfs-network)"]
+        Controller["Controller Node (FastAPI + uvicorn)<br/>Chunking, Placement, Repair, Scrub, Liveness"]
+        DB[("SQLite WAL<br/>/data/controller.db")]
+        Controller <--> DB
+
+        Controller <-->|"PUT/GET/DELETE /internal/chunks/{id}<br/>GET /internal/workers/{id}/chunks<br/>POST /internal/scrub"| W1["worker1 :8001<br/>(HTTP + Storage)"]
+        Controller <-->|"Internal HTTP"| W2["worker2 :8002<br/>(HTTP + Storage)"]
+        Controller <-->|"Internal HTTP"| W3["worker3 :8003<br/>(HTTP + Storage)"]
+        Controller <-->|"Internal HTTP"| W4["worker4 :8004<br/>(HTTP + Storage)"]
+
+        W1 --> V1[("worker1-data<br/>/data/chunks")]
+        W2 --> V2[("worker2-data<br/>/data/chunks")]
+        W3 --> V3[("worker3-data<br/>/data/chunks")]
+        W4 --> V4[("worker4-data<br/>/data/chunks")]
+    end

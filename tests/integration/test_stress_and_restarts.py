@@ -124,8 +124,14 @@ def _wait_ready(client):
         if client.get("/health").status_code != 200:
             return False
         ws = workers_state(client)
-        return len(ws) >= 4 and all(w["status"] == "ALIVE" for w in ws.values())
-    wait_for(ok, timeout=180, interval=1.0, desc="controller healthy and 4 workers ALIVE")
+        if len(ws) < 4 or not all(w["status"] == "ALIVE" for w in ws.values()):
+            return False
+        # Also verify every worker HTTP server is actually listening (DB keeps ALIVE across full down/up)
+        for port in (8001, 8002, 8003, 8004):
+            if httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0).status_code != 200:
+                return False
+        return True
+    wait_for(ok, timeout=180, interval=0.5, desc="controller and all 4 workers healthy & ALIVE")
 
 
 @pytest.mark.slow
