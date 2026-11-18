@@ -17,9 +17,10 @@ import hmac
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 MAX_CHUNK_SIZE = 1_048_576  # 1 MiB
 
@@ -112,6 +113,8 @@ class Storage:
 
     def _paths(self, chunk_id: str):
         d = os.path.join(self.root, chunk_id[:2])
+        if os.path.commonpath([os.path.realpath(d), os.path.realpath(self.root)]) != os.path.realpath(self.root):
+            raise InvalidChunkIDException("chunk path escapes storage root")
         return d, os.path.join(d, chunk_id + ".chunk"), os.path.join(d, chunk_id + ".sha256")
 
     @staticmethod
@@ -257,4 +260,91 @@ class Storage:
 
     def chunk_count(self) -> int:
         return len(self.list_chunks())
+
+    def chunk_mtimes(self) -> Dict[str, float]:
+        """Return {chunk_id: mtime} for all committed chunks on disk."""
+        out: Dict[str, float] = {}
+        try:
+            shards = list(os.scandir(self.root))
+        except FileNotFoundError:
+            return out
+        for shard in shards:
+            if not shard.is_dir():
+                continue
+            for entry in os.scandir(shard.path):
+                name = entry.name
+                if name.startswith(".") or not name.endswith(".chunk"):
+                    continue
+                cid = name[: -len(".chunk")]
+                if not _ID_RE.fullmatch(cid):
+                    continue
+                if self._read_sidecar(os.path.join(shard.path, cid + ".sha256")) is None:
+                    continue
+                try:
+                    out[cid] = entry.stat().st_mtime
+                except FileNotFoundError:
+                    continue
+        return out
+
+    def scrub(self, yield_delay: float = 0.005) -> dict:
+        """Stream-verify every chunk file on disk against its local .sha256 sidecar."""
+        candidates = []
+        try:
+            shards = list(os.scandir(self.root))
+        except FileNotFoundError:
+            shards = []
+        for shard in shards:
+            if not shard.is_dir():
+                continue
+            for entry in os.scandir(shard.path):
+                name = entry.name
+                if name.startswith(".") or not name.endswith(".chunk"):
+                    continue
+                cid = name[: -len(".chunk")]
+                if _ID_RE.fullmatch(cid):
+                    candidates.append(cid)
+        candidates.sort()
+
+        checked = 0
+        ok = 0
+        checksums: Dict[str, str] = {}
+        corrupt: List[str] = []
+        missing_checksum: List[str] = []
+
+        for idx, cid in enumerate(candidates):
+            _d, chunk_path, sum_path = self._paths(cid)
+            with self._lock(cid):
+                if not os.path.exists(chunk_path):
+                    continue
+                h = hashlib.sha256()
+                try:
+                    with open(chunk_path, "rb") as f:
+                        while True:
+                            piece = f.read(1_048_576)  # stream in 1 MB pieces
+                            if not piece:
+                                break
+                            h.update(piece)
+                except FileNotFoundError:
+                    continue
+                fresh = h.hexdigest()
+                checked += 1
+                if not os.path.exists(sum_path):
+                    missing_checksum.append(cid)
+                else:
+                    sidecar = self._read_sidecar(sum_path)
+                    if sidecar is None or not hmac.compare_digest(fresh, sidecar):
+                        corrupt.append(cid)
+                    else:
+                        ok += 1
+                        checksums[cid] = fresh
+            if yield_delay > 0 and idx + 1 < len(candidates):
+                time.sleep(yield_delay)
+
+        return {
+            "checked": checked,
+            "ok": ok,
+            "checksums": checksums,
+            "corrupt": corrupt,
+            "missing_checksum": missing_checksum,
+        }
 

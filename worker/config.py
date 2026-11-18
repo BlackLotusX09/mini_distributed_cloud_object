@@ -10,16 +10,20 @@ class ConfigError(Exception):
 
 _DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m)?")
 _WORKER_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.\-]*")
+WORKER_SCRUB_YIELD_DELAY = 0.005
 
 
-def parse_duration(text: str) -> float:
+def parse_duration(text: str, allow_zero: bool = False) -> float:
     """'5s' -> 5.0, '500ms' -> 0.5, '2m' -> 120.0, '5' -> 5.0 (seconds)."""
     m = _DURATION_RE.fullmatch(text.strip())
     if not m:
         raise ConfigError(f"invalid duration: {text!r}")
     value, unit = float(m.group(1)), m.group(2) or "s"
     seconds = value * {"ms": 0.001, "s": 1, "m": 60}[unit]
-    if seconds <= 0:
+    if allow_zero:
+        if seconds < 0:
+            raise ConfigError("duration must be >= 0")
+    elif seconds <= 0:
         raise ConfigError("duration must be > 0")
     return seconds
 
@@ -31,6 +35,7 @@ class Config:
     controller_url: str
     port: int
     heartbeat_interval: float
+    scrub_yield_delay: float = WORKER_SCRUB_YIELD_DELAY
 
     @property
     def address(self) -> str:
@@ -51,11 +56,18 @@ def load(env=None) -> Config:
         raise ConfigError("PORT must be an integer") from None
     if not 0 < port < 65536:
         raise ConfigError("PORT out of range")
+    raw_yield = env.get("WORKER_SCRUB_YIELD_DELAY")
+    scrub_yield_delay = (
+        parse_duration(raw_yield, allow_zero=True)
+        if raw_yield is not None and raw_yield.strip() != ""
+        else WORKER_SCRUB_YIELD_DELAY
+    )
     return Config(
         worker_id=worker_id,
         data_dir=env.get("DATA_DIR", "/data"),
         controller_url=env.get("CONTROLLER_URL", "http://controller:8000").rstrip("/"),
         port=port,
         heartbeat_interval=parse_duration(env.get("HEARTBEAT_INTERVAL", "5s")),
+        scrub_yield_delay=scrub_yield_delay,
     )
 

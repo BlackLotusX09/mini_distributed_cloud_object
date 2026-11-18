@@ -182,8 +182,8 @@ def test_list_objects_invalid_pagination(env, qs):
 # --------------------------------------------------------------- delete lifecycle
 def test_delete_during_pending_returns_409(env):
     client, _ = env
-    db.create_object_pending("busy-1", "busy.bin", 10, 1, time.time())
-    assert_error(client.delete("/api/v1/objects/busy-1"), 409, "OBJECT_BUSY")
+    db.create_object_pending("7c1f0a5e-2b3d-4e6f-8a9b-0c1d2e3f4a5b", "busy.bin", 10, 1, time.time())
+    assert_error(client.delete("/api/v1/objects/7c1f0a5e-2b3d-4e6f-8a9b-0c1d2e3f4a5b"), 409, "OBJECT_BUSY")
 
 
 def test_delete_happy_path_and_idempotent_second_delete(env):

@@ -2,7 +2,8 @@
 import json
 from typing import Dict, Optional, Tuple
 
-from errors import ApiError
+from errors import ApiError, InvalidMetadata, InvalidPagination
+from settings import MAX_METADATA_KEYS
 
 RESERVED_KEYS = frozenset({
     "id", "object_id", "name", "size", "content_type", "checksum",
@@ -13,7 +14,7 @@ DEFAULT_LIMIT, MAX_LIMIT = 50, 200
 
 
 def _invalid(msg: str) -> ApiError:
-    return ApiError(400, "INVALID_METADATA", msg)
+    return InvalidMetadata(msg)
 
 
 def serialized_size(d: dict) -> int:
@@ -34,6 +35,8 @@ def _check_keys(d: dict, allow_none: bool, max_bytes: int) -> None:
         if not isinstance(v, str):
             raise _invalid(f"metadata value for '{k}' must be a string"
                            + (" or null" if allow_none else ""))
+    if len(d) > MAX_METADATA_KEYS:
+        raise _invalid(f"metadata has more than {MAX_METADATA_KEYS} keys")
     if serialized_size(d) > max_bytes:
         raise _invalid(f"metadata exceeds {max_bytes} bytes")
 
@@ -67,17 +70,17 @@ def parse_pagination(params) -> Tuple[int, int]:
         if raw is None:
             return default
         if isinstance(raw, bool):
-            raise ApiError(400, "INVALID_PAGINATION", f"'{name}' must be an integer")
+            raise InvalidPagination(f"'{name}' must be an integer")
         try:
             value = int(raw)
         except (TypeError, ValueError):
-            raise ApiError(400, "INVALID_PAGINATION", f"'{name}' must be an integer") from None
+            raise InvalidPagination(f"'{name}' must be an integer") from None
         if value < 0:
-            raise ApiError(400, "INVALID_PAGINATION", f"'{name}' must not be negative")
+            raise InvalidPagination(f"'{name}' must not be negative")
         return value
 
     limit = parse("limit", DEFAULT_LIMIT)
     if limit < 1 or limit > MAX_LIMIT:
-        raise ApiError(400, "INVALID_PAGINATION", f"'limit' must be between 1 and {MAX_LIMIT}")
+        raise InvalidPagination(f"'limit' must be between 1 and {MAX_LIMIT}")
     return limit, parse("offset", 0)
 

@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY app.py config.py heartbeat.py ./
+COPY app.py config.py heartbeat.py worker_obs.py ./
 COPY storage ./storage
 RUN mkdir -p /data
 ENV PYTHONUNBUFFERED=1 PORT=8000 DATA_DIR=/data

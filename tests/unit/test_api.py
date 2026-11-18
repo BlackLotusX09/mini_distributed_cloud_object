@@ -7,7 +7,7 @@ from contextlib import ExitStack
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "controller"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "controller"))
 
 import db  # noqa: E402
 import main  # noqa: E402

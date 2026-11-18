@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
 import config as config_mod
+import worker_obs
 from heartbeat import HeartbeatDaemon
 from storage import (
     MAX_CHUNK_SIZE,
@@ -28,13 +29,16 @@ _WORKER_CHUNKS_RE = re.compile(r"/internal/workers/([^/]*)/chunks")
 _DRAIN_LIMIT = 4 * 1024 * 1024  # never read more than this just to discard a body
 
 
-def make_handler(storage: Storage, worker_id: str):
+def make_handler(storage: Storage, worker_id: str, scrub_yield_delay: float = 0.005):
     class Handler(BaseHTTPRequestHandler):
         server_version = "chunk-worker/1"
 
         # ------------------------------------------------------ responses
+        _rid = "background"
+
         def _send(self, status, body=b"", content_type="application/json", headers=None):
             self.send_response(status)
+            self.send_header("X-Request-ID", self._rid)
             if status != 204:
                 self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -50,17 +54,23 @@ def make_handler(storage: Storage, worker_id: str):
         def _error(self, status, code, message):
             self._json(status, {"error": code, "message": message})
 
-        def log_message(self, fmt, *args):
-            print(f"[{worker_id}]", fmt % args, flush=True)
+        def log_message(self, fmt, *args):  # per-request access lines are DEBUG noise
+            worker_obs.log("DEBUG", fmt % args, request_id=self._rid, status="access")
 
         # --------------------------------------------------------- routing
         def _dispatch(self, method):
+            raw_rid = (self.headers.get("X-Request-ID") or "").strip()
+            self._rid = raw_rid if re.fullmatch(r"[A-Za-z0-9._\-]{1,128}", raw_rid) else "background"
             path = urlsplit(self.path).path
             try:
                 if path == "/health":
                     if method == "GET":
                         return self._health()
                     return self._error(405, "METHOD_NOT_ALLOWED", method)
+                if path == "/internal/scrub":
+                    if method != "POST":
+                        return self._error(405, "METHOD_NOT_ALLOWED", method)
+                    return self._scrub()
                 if path.startswith(CHUNK_PREFIX):
                     chunk_id = unquote(path[len(CHUNK_PREFIX):])
                     handler = {"PUT": self._put, "GET": self._get, "DELETE": self._delete}.get(method)
@@ -82,16 +92,18 @@ def make_handler(storage: Storage, worker_id: str):
             except NotFoundError as e:
                 self._error(404, "CHUNK_NOT_FOUND", str(e))
             except ChunkCorruptionError as e:
-                print(f"[{worker_id}] CORRUPT: {e}", flush=True)
+                worker_obs.log("WARNING", "chunk corrupt on read", request_id=self._rid, error=str(e))
                 self._error(409, "CHUNK_CORRUPT", str(e))
             except ChunkConflictError as e:
                 self._error(409, "CHUNK_CONFLICT", str(e))
             except OSError as e:
-                print(f"[{worker_id}] storage I/O error: {e}", flush=True)
+                worker_obs.log("ERROR", "storage I/O error", request_id=self._rid, error=str(e))
                 self._error(500, "STORAGE_ERROR", "storage I/O error")
             except Exception as e:  # never leak a traceback to clients
-                print(f"[{worker_id}] internal error: {e!r}", flush=True)
-                self._error(500, "INTERNAL_ERROR", "internal error")
+                import traceback
+                worker_obs.log("ERROR", "unhandled error", request_id=self._rid,
+                               trace=traceback.format_exc())  # server-side only
+                self._error(500, "INTERNAL_ERROR", "Internal server error")
 
         def do_GET(self):
             self._dispatch("GET")
@@ -104,6 +116,15 @@ def make_handler(storage: Storage, worker_id: str):
 
         def do_POST(self):
             self._dispatch("POST")
+
+        def do_PATCH(self):
+            self._dispatch("PATCH")
+
+        def do_HEAD(self):
+            self._dispatch("HEAD")
+
+        def do_OPTIONS(self):
+            self._dispatch("OPTIONS")
 
         # -------------------------------------------------------- handlers
         def _put(self, chunk_id):
@@ -157,7 +178,15 @@ def make_handler(storage: Storage, worker_id: str):
                 {"chunk_id": c.chunk_id, "size": c.size, "checksum": c.checksum}
                 for c in storage.list_chunks()
             ]
-            self._json(200, {"worker_id": worker_id, "chunks": chunks})
+            self._json(200, {
+                "worker_id": worker_id,
+                "chunks": chunks,
+                "chunk_mtimes": storage.chunk_mtimes(),
+            })
+
+        def _scrub(self):
+            result = storage.scrub(yield_delay=scrub_yield_delay)
+            self._json(200, result)
 
         def _health(self):
             try:
@@ -177,8 +206,8 @@ def make_handler(storage: Storage, worker_id: str):
     return Handler
 
 
-def make_server(storage: Storage, worker_id: str, host="0.0.0.0", port=0):
-    return ThreadingHTTPServer((host, port), make_handler(storage, worker_id))
+def make_server(storage: Storage, worker_id: str, host="0.0.0.0", port=0, scrub_yield_delay: float = 0.005):
+    return ThreadingHTTPServer((host, port), make_handler(storage, worker_id, scrub_yield_delay=scrub_yield_delay))
 
 
 def main():
@@ -188,13 +217,11 @@ def main():
         print(f"configuration error: {e}", file=sys.stderr, flush=True)
         sys.exit(2)
 
+    worker_obs.set_node_id(cfg.worker_id)
     storage = Storage(cfg.data_dir)
-    print(
-        f"[{cfg.worker_id}] data_dir={cfg.data_dir} chunks={storage.chunk_count()} "
-        f"recovered_tmp={storage.recovered_tmp_files}",
-        flush=True,
-    )
-    server = make_server(storage, cfg.worker_id, port=cfg.port)
+    worker_obs.log("INFO", "worker starting", data_dir=cfg.data_dir,
+                   chunks=storage.chunk_count(), recovered_tmp=storage.recovered_tmp_files)
+    server = make_server(storage, cfg.worker_id, port=cfg.port, scrub_yield_delay=cfg.scrub_yield_delay)
     daemon = HeartbeatDaemon(cfg, storage)
     daemon.start()
 
@@ -204,7 +231,7 @@ def main():
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
-    print(f"[{cfg.worker_id}] listening on :{cfg.port}, advertising {cfg.address}", flush=True)
+    worker_obs.log("INFO", "listening", port=cfg.port, address=cfg.address)
     server.serve_forever()
     server.server_close()
 

@@ -7,7 +7,7 @@ import uuid
 from typing import Dict, Optional, Tuple
 
 import db
-from errors import ApiError
+from errors import StorageUnavailable
 from lifecycle import purge_object
 from placement import InsufficientWorkersError
 from replication import ChunkStoreFailed, store_chunk
@@ -91,7 +91,7 @@ async def ingest_upload(
             except Exception:
                 log.exception("rollback of %s failed", object_id)
         if isinstance(exc, ChunkStoreFailed):
-            raise ApiError(503, "STORAGE_UNAVAILABLE", str(exc)) from exc
+            raise StorageUnavailable(str(exc)) from exc
         raise
 
     return await asyncio.to_thread(db.get_object_row, object_id)

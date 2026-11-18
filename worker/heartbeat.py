@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 
 
 def log(msg: str) -> None:
-    print(msg, flush=True)
+    import re
+
+    import worker_obs
+    msg = re.sub(r"^\[[^\]]*\]\s*", "", msg)
+    level = "WARNING" if any(w in msg for w in ("failed", "rejected", "does not know")) else "INFO"
+    worker_obs.log(level, msg)
 
 
 class HeartbeatDaemon(threading.Thread):
@@ -72,6 +77,8 @@ class HeartbeatDaemon(threading.Thread):
             log(f"[{self.cfg.worker_id}] heartbeat failed: {e}")
             return "error"
         if 200 <= status < 300:
+            import worker_obs
+            worker_obs.log("DEBUG", "heartbeat tick")
             return "ok"
         if status == 404:
             log(f"[{self.cfg.worker_id}] controller does not know us; re-registering")

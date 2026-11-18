@@ -6,7 +6,7 @@ import tempfile
 import threading
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "worker"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "worker"))
 
 from app import make_server  # noqa: E402
 from storage import Storage, sha256_hex  # noqa: E402
@@ -153,6 +153,23 @@ class WorkerHTTPTest(unittest.TestCase):
         self.assertEqual(j["status"], "healthy")
         self.assertIsInstance(j["chunk_count"], int)
         self.assertGreater(j["free_bytes"], 0)
+
+    def test_post_internal_scrub(self):
+        d1 = os.urandom(1024)
+        d2 = os.urandom(1024)
+        self.req("PUT", "/internal/chunks/sc1", d1)
+        self.req("PUT", "/internal/chunks/sc2", d2)
+        p2 = os.path.join(self.storage.root, "sc", "sc2.chunk")
+        raw = bytearray(open(p2, "rb").read())
+        raw[10] ^= 0xFF
+        open(p2, "wb").write(bytes(raw))
+        s, _, b = self.req("POST", "/internal/scrub")
+        self.assertEqual(s, 200)
+        j = json.loads(b)
+        self.assertIn("sc1", j["checksums"])
+        self.assertIn("sc2", j["corrupt"])
+        self.assertGreaterEqual(j["checked"], 2)
+        self.assert_error(self.req("GET", "/internal/scrub"), 405, "METHOD_NOT_ALLOWED")
 
 
 if __name__ == "__main__":

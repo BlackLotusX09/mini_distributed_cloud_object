@@ -6,7 +6,7 @@ import tempfile
 import textwrap
 import unittest
 
-WORKER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "worker")
+WORKER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "worker")
 sys.path.insert(0, WORKER_DIR)
 
 from storage import (  # noqa: E402

@@ -5,7 +5,7 @@ from collections import Counter
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "controller"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "controller"))
 
 from placement import InsufficientWorkersError, choose_workers  # noqa: E402
 

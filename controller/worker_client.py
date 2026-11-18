@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
+from obs import request_id_var
 from settings import UPLOAD_WORKER_TIMEOUT
 
 
@@ -65,8 +66,13 @@ class WorkerClient:
 
     def __init__(self, timeout: float = UPLOAD_WORKER_TIMEOUT,
                  transport: Optional[httpx.AsyncBaseTransport] = None,
-                 max_connections: int = 100):
+                 max_connections: int = 100,
+                 read_timeout: float = 10.0, delete_timeout: float = 5.0,
+                 scrub_timeout: float = 60.0):
         self._timeout = timeout
+        self._read_timeout = read_timeout
+        self._delete_timeout = delete_timeout
+        self._scrub_timeout = scrub_timeout
         self._transport = transport
         self._max_connections = max_connections
         self._client: Optional[httpx.AsyncClient] = None
@@ -87,15 +93,24 @@ class WorkerClient:
             await self._client.aclose()
             self._client = None
 
-    async def _request(self, worker: Any, method: str, chunk_id: str, **kwargs) -> httpx.Response:
+    async def _raw_request(self, worker: Any, method: str, path: str, **kwargs) -> httpx.Response:
         if self._client is None:
             raise RuntimeError("WorkerClient not started")
         w = _normalize_worker(worker)
-        url = f"{w['address'].rstrip('/')}/internal/chunks/{quote(chunk_id, safe='')}"
+        url = f"{w['address'].rstrip('/')}{path}"
+        kwargs.setdefault("timeout", self._timeout)  # never an unbounded network call
+        rid = request_id_var.get()
+        if rid != "background":
+            kwargs["headers"] = {**kwargs.get("headers", {}), "X-Request-ID": rid}
         try:
             return await self._client.request(method, url, **kwargs)
         except (httpx.HTTPError, httpx.InvalidURL) as e:  # connect, DNS, timeout, protocol
             raise WorkerUnreachable(w["worker_id"], f"{type(e).__name__}: {e}") from e
+
+    async def _request(self, worker: Any, method: str, chunk_id: str, **kwargs) -> httpx.Response:
+        return await self._raw_request(
+            worker, method, f"/internal/chunks/{quote(chunk_id, safe='')}", **kwargs
+        )
 
     @staticmethod
     def _raise(worker: Any, resp: httpx.Response):
@@ -114,15 +129,45 @@ class WorkerClient:
             self._raise(worker, resp)
 
     async def get_chunk(self, worker: Any, chunk_id: str) -> bytes:
-        resp = await self._request(worker, "GET", chunk_id)
+        resp = await self._request(worker, "GET", chunk_id, timeout=self._read_timeout)
         if resp.status_code != 200:
             self._raise(worker, resp)
         return resp.content
 
     async def delete_chunk(self, worker: Any, chunk_id: str) -> None:
-        resp = await self._request(worker, "DELETE", chunk_id)
+        resp = await self._request(worker, "DELETE", chunk_id, timeout=self._delete_timeout)
         if resp.status_code not in (200, 204, 404):  # 404 = already gone
             self._raise(worker, resp)
+
+    async def list_worker_chunks(self, worker: Any) -> list:
+        """Fetch worker's on-disk chunk inventory via GET /internal/workers/{id}/chunks."""
+        w = _normalize_worker(worker)
+        wid = quote(w["worker_id"], safe="")
+        resp = await self._raw_request(worker, "GET", f"/internal/workers/{wid}/chunks",
+                                      timeout=self._read_timeout)
+        if resp.status_code != 200:
+            self._raise(worker, resp)
+        body = resp.json()
+        mtimes = body.get("chunk_mtimes") or {}
+        out = []
+        for ch in body.get("chunks") or []:
+            cid = ch["chunk_id"]
+            mtime = ch.get("mtime", mtimes.get(cid))
+            out.append({
+                "chunk_id": cid,
+                "size": ch.get("size"),
+                "checksum": ch.get("checksum"),
+                "mtime": mtime,
+            })
+        return out
+
+    async def scrub_worker(self, worker: Any) -> dict:
+        """Trigger disk scrub via POST /internal/scrub."""
+        resp = await self._raw_request(worker, "POST", "/internal/scrub",
+                                      timeout=self._scrub_timeout)
+        if resp.status_code != 200:
+            self._raise(worker, resp)
+        return resp.json()
 
 
 _default_client: Optional[WorkerClient] = None
@@ -156,3 +201,13 @@ async def get_chunk(worker: Any, chunk_id: str) -> bytes:
 async def delete_chunk(worker: Any, chunk_id: str) -> None:
     client = await _get_default_client()
     await client.delete_chunk(worker, chunk_id)
+
+
+async def list_worker_chunks(worker: Any) -> list:
+    client = await _get_default_client()
+    return await client.list_worker_chunks(worker)
+
+
+async def scrub_worker(worker: Any) -> dict:
+    client = await _get_default_client()
+    return await client.scrub_worker(worker)
