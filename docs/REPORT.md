@@ -217,7 +217,44 @@ The test suite is split into `tests/unit/` (isolated unit & hardening tests) and
 
 ---
 
-## 10. Limitations & Future Work
+## 10. Empirical Performance & Scalability Benchmarks (`benchmarks/`)
+
+On the `bench` branch (isolating unmodified `v1.0` application code), we executed an 8-experiment benchmarking suite using pre-generated `os.urandom()` buffers and strict `time.perf_counter()` boundaries on an Apple Silicon Docker Desktop VM (`Apple M4`, 10 cores, `16.0 GiB` host / `7.7 GiB` Linux VM). Full scripts, raw CSVs, and methodology reside in [benchmarks/README.md](../benchmarks/README.md).
+
+### Summary of Measured Results
+
+1. **Streaming Throughput vs Object Size (`1 KB`–`1 GB`, 10 runs/size, `bench_throughput.py`):**
+   - Upload throughput rises from `0.11 MB/s` (`1 KB`) and `60.23 MB/s` (`1 MB`) to a peak median of **`81.51 MB/s`** at `64 MB`, then tapers to `75.85 MB/s` (`256 MB`) and `53.12 MB/s` (`1 GB`) as Starlette multipart temp-file spooling and single-stream disk flush contention become dominant.
+   - Download throughput rises from `0.47 MB/s` (`1 KB`) and `134.07 MB/s` (`1 MB`) to **`246.50 MB/s`** at `256 MB` (`220.94 MB/s` at `1 GB`), with `0` HTTP errors and `0` post-download SHA-256 mismatches across all sizes.
+2. **Small-Object Sequential Latency (`500` reqs/size, `bench_latency.py`):**
+   - `1 KB`: Upload `p50=9.02 ms`, `p95=10.22 ms`, `p99=13.63 ms`; Download `p50=2.02 ms`, `p95=2.53 ms`, `p99=3.20 ms`.
+   - `10 KB`: Upload `p50=9.07 ms`, `p95=10.69 ms`, `p99=12.67 ms`; Download `p50=1.97 ms`, `p95=2.48 ms`, `p99=6.08 ms`.
+   - `100 KB`: Upload `p50=9.86 ms`, `p95=11.24 ms`, `p99=13.35 ms`; Download `p50=2.37 ms`, `p95=2.72 ms`, `p99=5.61 ms`. Zero failures (`0/3,000`).
+3. **Concurrency Scaling & Bottlenecks (`1`–`16` clients @ `16 MB`, `bench_concurrency.py`):**
+   - Aggregate download scales from `166.34 MB/s` (`c=1`) to **`244.42 MB/s`** (`c=8`, `239.58 MB/s` at `c=16`).
+   - Aggregate upload scales from `71.22 MB/s` (`c=1`) to **`149.54 MB/s`** (`c=16`), where `docker stats` confirms controller Python CPU saturates (`126.6%` CPU vs `65.3%` summed across all 4 workers).
+4. **Controller Coordination Overhead (`1 MB`, 50 runs, `bench_overhead.py`):**
+   - Direct worker (`PUT`): `7.97 ms` (`15.95 ms` at `2x`); Controller (`POST`): `17.30 ms` (**`+9.32 ms`** vs `1x`, only **`+1.35 ms`** vs naive `2x` due to parallel `R=2` fan-out).
+   - Direct worker (`GET`): `4.85 ms`; Controller (`GET`): `7.41 ms` (**`+2.56 ms`** for SQLite lookup, streaming, and SHA-256 verification).
+5. **180s Live Worker Failure & Recovery Timeline (`bench_failure.py`):**
+   - Under `4` concurrent `4 MB` readers + periodic `1 MB/2s` uploads, stopping `worker2` at `t=60.0s` triggered `DEAD` detection at `t=76.26s`, full re-replication back to `R=2` at `t=111.33s` (shortly after the 30s grace period), and sub-2s rejoin + trim at `t=121.23s` after restarting `worker2` at `t=120.01s`. Cluster averaged **209.32 MB/s** with **0 / 9,487 client request errors**.
+6. **Repair Speed, Write Amplification & Chunk Balance (`100 MB`–`2 GB`, `bench_repair.py`):**
+   - Detection latency across 4 volumes stayed within `10.67–15.94 s`; post-grace active repair sustained **`1.94–2.18 MB/s`** (`22.98 s` for `100 MB`, `127.37 s` for `500 MB`, `263.13 s` for `1 GB`, `526.26 s` for `2 GB`), cleanly bounded by `MAX_REPAIRS_PER_CYCLE=20` per `REPAIR_INTERVAL=10s` (`~2 MB/s`).
+   - Pre-failure and post-rejoin `du -sb /data` write amplification remained at **`2.0001x`** (vs ideal `2.0x`), while least-loaded placement yielded near-perfect worker balance (`50/50/50/50`, `250/250/250/250`, `512/512/512/512`, `1024/1023/1025/1024` -> skew **`1.000–1.002x`**).
+7. **Full-Cluster Two-Layer Scrubbing (`1 GB` raw/worker, `bench_scrub.py`):**
+   - Scrubbing `4,096` chunks (`4,096 MB`) finished in `35.35 s` (**`115.87 MB/s`**) idle and `37.41 s` (**`109.48 MB/s`**, `5.8%` slowdown) under 4 concurrent download clients (`578` x `16 MB` downloads, `0` errors), validating the non-intrusive `0.005 s` per-chunk yield delay.
+
+![Throughput vs Object Size](../benchmarks/plots/exp1_throughput_vs_size.png)
+![Small Object Latency](../benchmarks/plots/exp2_small_object_latency.png)
+![Concurrency Scaling](../benchmarks/plots/exp3_concurrency_scaling.png)
+![Controller Overhead](../benchmarks/plots/exp4_controller_overhead.png)
+![Failure Timeline](../benchmarks/plots/exp5_failure_timeline.png)
+![Repair Speed and Storage Efficiency](../benchmarks/plots/exp6_8_repair_and_storage.png)
+![Scrub Throughput](../benchmarks/plots/exp7_scrub_throughput.png)
+
+---
+
+## 11. Limitations & Future Work
 
 1. **Controller Single Point of Failure:** The single controller and local SQLite DB limit write scalability and availability; future work could replicate metadata via Raft/rqlite or stateless controllers over PostgreSQL.
 2. **Transport Security & Multi-Tenancy:** Internal and public HTTP APIs currently assume a trusted network; adding TLS/mTLS, bearer/HMAC auth, and tenant namespaces would harden production deployment.
@@ -226,6 +263,6 @@ The test suite is split into `tests/unit/` (isolated unit & hardening tests) and
 
 ---
 
-## 11. Conclusion
+## 12. Conclusion
 
 Through streaming 1 MiB chunking, atomic `PENDING -> COMMITTED` transitions, lease-based heartbeats with grace-period re-replication, asynchronous rejoin reconciliation, two-layer SHA-256 verification with automated disk scrubbing, structured `X-Request-ID` observability, and strict invariant verification, the distributed object storage cluster maintains durability and byte-exact integrity across worker crashes, network pauses, silent disk corruption, concurrent load, and full cluster restarts.

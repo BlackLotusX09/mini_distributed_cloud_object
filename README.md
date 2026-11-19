@@ -231,6 +231,35 @@ python3 scripts/check_invariants.py
 
 ---
 
+## Performance & Fault-Tolerance Benchmarks (`benchmarks/`)
+
+Measured on a 5-container Docker Compose cluster (`Apple M4`, 10 cores, `16.0 GiB` host / `7.7 GiB` Docker Desktop VM) on the `bench` branch from tag `v1.0` with incompressible `os.urandom()` payloads outside `time.perf_counter()` blocks (`1 MB = 1,048,576 B`):
+
+| Experiment | Benchmark Scope | Key Measured Result | Plot |
+| --- | --- | --- | --- |
+| **Exp 1** | Streaming throughput (`1 KB`–`1 GB`, 10 runs/size) | Upload peaks **81.51 MB/s** (`64 MB`, **53.12 MB/s** @ `1 GB`); Download peaks **246.50 MB/s** (`256 MB`, **220.94 MB/s** @ `1 GB`); **0** errors / SHA-256 mismatches. | [Throughput Curve](benchmarks/plots/exp1_throughput_vs_size.png) |
+| **Exp 2** | Small-object sequential latency (`500` reqs/size) | `1 KB`: Upload p50=`9.02 ms` / p99=`13.63 ms`, Download p50=`2.02 ms` / p99=`3.20 ms`; `100 KB`: Upload p50=`9.86 ms` / p99=`13.35 ms`, Download p50=`2.37 ms` / p99=`5.61 ms`. | [Latency Percentiles](benchmarks/plots/exp2_small_object_latency.png) |
+| **Exp 3** | Concurrency scaling (`1`–`16` threads @ `16 MB`) | Aggregate Download peaks **244.42 MB/s** (`c=8`); Aggregate Upload reaches **149.54 MB/s** (`c=16`, controller CPU `126.6%`). **0** errors. | [Concurrency Scaling](benchmarks/plots/exp3_concurrency_scaling.png) |
+| **Exp 4** | Controller vs direct worker (`1 MB`, 50 runs) | Upload: `7.97 ms` direct (`15.95 ms` @ `2x`) vs `17.30 ms` controller (**+1.35 ms** vs `2x`); Download: `4.85 ms` direct vs `7.41 ms` controller (**+2.56 ms**). | [Controller Overhead](benchmarks/plots/exp4_controller_overhead.png) |
+| **Exp 5** | Live `180s` load (`stop worker2 @60s`, `start @120s`) | Mean **209.32 MB/s**, **0/9,487** client errors; `DEAD` @ `76.26s`, repaired to `R=2` @ `111.33s`, rejoined & trimmed @ `121.23s`. | [Failure Timeline](benchmarks/plots/exp5_failure_timeline.png) |
+| **Exp 6 & 8** | Repair speed, write amp & balance (`100 MB`–`2 GB`) | Repair rate **1.94–2.18 MB/s** (`23.0s` @ `100 MB` -> `526.3s` @ `2 GB`), write amp **2.0001x**, chunk skew **`1.000–1.002x`**. | [Repair & Storage](benchmarks/plots/exp6_8_repair_and_storage.png) |
+| **Exp 7** | Full-cluster scrub (`4,096` chunks / `~1 GB`/worker) | Idle **115.87 MB/s** (`35.35s`); under 4 concurrent readers (**247.2 MB/s**, **0** read errors) **109.48 MB/s** (`37.41s`). | [Scrub Throughput](benchmarks/plots/exp7_scrub_throughput.png) |
+
+Run any benchmark and regenerate all plots (see [benchmarks/README.md](benchmarks/README.md) for flags and runtime estimates):
+
+```bash
+.venv/bin/python benchmarks/bench_latency.py
+.venv/bin/python benchmarks/bench_overhead.py
+.venv/bin/python benchmarks/bench_concurrency.py
+.venv/bin/python benchmarks/bench_throughput.py
+.venv/bin/python benchmarks/bench_failure.py
+.venv/bin/python benchmarks/bench_repair.py
+.venv/bin/python benchmarks/bench_scrub.py
+.venv/bin/python benchmarks/plot.py
+```
+
+---
+
 ## Project Structure & Documentation
 
 ```text
@@ -239,6 +268,13 @@ python3 scripts/check_invariants.py
 ├── docker-compose.yml          # 1 controller + 4 stateful chunk workers
 ├── pytest.ini
 ├── requirements-dev.txt
+├── benchmarks/                 # Reproducible performance & fault-tolerance suite
+│   ├── README.md               # Benchmark methodology, commands & summary
+│   ├── harness.py              # Timing, stats, provenance CSV writer & cluster helpers
+│   ├── bench_*.py              # Experiments 1..8 runners
+│   ├── plot.py                 # 300-DPI Matplotlib plotting suite
+│   ├── results/                # Timestamped & *_latest.csv benchmark results
+│   └── plots/                  # Generated PNG charts
 ├── client/                     # CLI tool (client/objstore.py)
 ├── controller/                 # FastAPI coordinator, SQLite WAL DB, repair & scrub loops
 ├── worker/                     # Stateful chunk worker daemon & atomic disk engine
@@ -246,6 +282,7 @@ python3 scripts/check_invariants.py
 ├── docs/
 │   ├── REPORT.md               # Full technical engineering report & empirical results
 │   ├── TESTING.md              # Unit, integration, and manual testing guide
+│   ├── TEAM_SPLIT.md           # Two-person ownership, demo split & viva Q&A map
 │   ├── design.md               # Condensed Day-1 design summary
 │   ├── diagrams/               # Mermaid architecture, sequence, and state diagrams
 │   └── archive/                # Historical milestone notes & architecture design logs
@@ -255,8 +292,10 @@ python3 scripts/check_invariants.py
     └── integration/            # Live cluster contract, fault-tolerance & stress suites
 ```
 
+- [Benchmark Suite & Methodology](benchmarks/README.md)
 - [Technical Engineering Report](docs/REPORT.md)
 - [Testing & Verification Guide](docs/TESTING.md)
+- [Two-Person Ownership & Evaluation Split](docs/TEAM_SPLIT.md)
 - [Condensed Design Doc](docs/design.md)
 - [Architecture & Sequence Diagrams](docs/diagrams/)
 
