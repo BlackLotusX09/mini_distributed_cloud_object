@@ -153,3 +153,19 @@ docker compose down          # keeps data volumes
 docker compose down -v       # also deletes all volumes (data loss, wipes all chunks)
 ```
 
+## 11. Performance & Fault-Tolerance Benchmarks (`benchmarks/`)
+
+See [benchmarks/README.md](../benchmarks/README.md) for methodology, VM caveats, and measured baselines. Install `matplotlib` into `.venv` first (`.venv/bin/pip install matplotlib`), ensure the Docker stack is healthy, and run any experiment:
+
+```sh
+.venv/bin/python benchmarks/bench_latency.py      # Exp 2: 500 seq reqs @ 1KB, 10KB, 100KB
+.venv/bin/python benchmarks/bench_overhead.py     # Exp 4: 1MB controller vs direct worker
+.venv/bin/python benchmarks/bench_concurrency.py  # Exp 3: 1..16 threads @ 16MB + docker stats
+.venv/bin/python benchmarks/bench_throughput.py   # Exp 1: 1KB..1GB upload/download throughput
+.venv/bin/python benchmarks/bench_failure.py      # Exp 5: 180s load during worker2 stop/start
+.venv/bin/python benchmarks/bench_repair.py       # Exp 6 & 8: 100MB..2GB repair, WA & skew
+.venv/bin/python benchmarks/bench_scrub.py        # Exp 7: 1GB/worker scrub idle vs load
+.venv/bin/python benchmarks/plot.py               # Render PNGs to benchmarks/plots/
+```
+
+

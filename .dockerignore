@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+benchmarks
+docs
+tests
+demo
+frontend/node_modules
+frontend/dist

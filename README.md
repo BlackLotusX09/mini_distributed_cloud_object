@@ -87,6 +87,9 @@ python3 client/objstore.py workers
 | `ORPHAN_SAFETY_TTL_SECONDS` | `600` | Age threshold before deleting unknown on-disk orphan chunks at worker rejoin. |
 | `SCRUB_INTERVAL` | `300.0` | Seconds between full-cluster automated scrub passes. |
 | `WORKER_SCRUB_YIELD_DELAY` | `0.005` | Delay between chunks during worker disk scrubbing. |
+| `ADMIN_ENABLED` | `true` | Gate all `/api/v1/admin/*` endpoints (`false` returns `403 ADMIN_DISABLED`). |
+| `CORS_ORIGINS` | `""` | Optional comma-separated origins enabled via FastAPI `CORSMiddleware`. |
+| `FRONTEND_DIST` | `/app/ui_dist` | Directory containing built React dashboard static assets served at `/ui`. |
 | `LOG_LEVEL` | `INFO` | Controller JSON-lines log threshold (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 
 ### Worker Environment Variables (`worker/config.py`)
@@ -120,7 +123,10 @@ Every non-2xx response across controller and worker returns JSON: `{"error": "<E
 | `/api/v1/admin/workers` | `GET` | `workers` | `200 OK` |
 | `/api/v1/admin/objects/{object_id}/chunks` | `GET` | `chunks <OBJECT_ID>` | `200 OK` |
 | `/api/v1/admin/replication` | `GET` | `replication` | `200 OK` |
+| `/api/v1/admin/overview` | `GET` | — | `200 OK` |
+| `/api/v1/admin/events` | `GET` | — | `200 OK` |
 | `/api/v1/admin/scrub` | `POST` | `scrub` | `200 OK` |
+| `/ui` | `GET` | *(Web Dashboard)* | `200 OK` |
 | `/health` | `GET` | — | `200 OK` |
 
 ### Internal Worker / Controller Endpoints
@@ -231,6 +237,59 @@ python3 scripts/check_invariants.py
 
 ---
 
+## Performance & Fault-Tolerance Benchmarks (`benchmarks/`)
+
+Measured on a 5-container Docker Compose cluster (`Apple M4`, 10 cores, `16.0 GiB` host / `7.7 GiB` Docker Desktop VM) on the `bench` branch from tag `v1.0` with incompressible `os.urandom()` payloads outside `time.perf_counter()` blocks (`1 MB = 1,048,576 B`):
+
+| Experiment | Benchmark Scope | Key Measured Result | Plot |
+| --- | --- | --- | --- |
+| **Exp 1** | Streaming throughput (`1 KB`–`1 GB`, 10 runs/size) | Upload peaks **81.51 MB/s** (`64 MB`, **53.12 MB/s** @ `1 GB`); Download peaks **246.50 MB/s** (`256 MB`, **220.94 MB/s** @ `1 GB`); **0** errors / SHA-256 mismatches. | [Throughput Curve](benchmarks/plots/exp1_throughput_vs_size.png) |
+| **Exp 2** | Small-object sequential latency (`500` reqs/size) | `1 KB`: Upload p50=`9.02 ms` / p99=`13.63 ms`, Download p50=`2.02 ms` / p99=`3.20 ms`; `100 KB`: Upload p50=`9.86 ms` / p99=`13.35 ms`, Download p50=`2.37 ms` / p99=`5.61 ms`. | [Latency Percentiles](benchmarks/plots/exp2_small_object_latency.png) |
+| **Exp 3** | Concurrency scaling (`1`–`16` threads @ `16 MB`) | Aggregate Download peaks **244.42 MB/s** (`c=8`); Aggregate Upload reaches **149.54 MB/s** (`c=16`, controller CPU `126.6%`). **0** errors. | [Concurrency Scaling](benchmarks/plots/exp3_concurrency_scaling.png) |
+| **Exp 4** | Controller vs direct worker (`1 MB`, 50 runs) | Upload: `7.97 ms` direct (`15.95 ms` @ `2x`) vs `17.30 ms` controller (**+1.35 ms** vs `2x`); Download: `4.85 ms` direct vs `7.41 ms` controller (**+2.56 ms**). | [Controller Overhead](benchmarks/plots/exp4_controller_overhead.png) |
+| **Exp 5** | Live `180s` load (`stop worker2 @60s`, `start @120s`) | Mean **209.32 MB/s**, **0/9,487** client errors; `DEAD` @ `76.26s`, repaired to `R=2` @ `111.33s`, rejoined & trimmed @ `121.23s`. | [Failure Timeline](benchmarks/plots/exp5_failure_timeline.png) |
+| **Exp 6 & 8** | Repair speed, write amp & balance (`100 MB`–`2 GB`) | Repair rate **1.94–2.18 MB/s** (`23.0s` @ `100 MB` -> `526.3s` @ `2 GB`), write amp **2.0001x**, chunk skew **`1.000–1.002x`**. | [Repair & Storage](benchmarks/plots/exp6_8_repair_and_storage.png) |
+| **Exp 7** | Full-cluster scrub (`4,096` chunks / `~1 GB`/worker) | Idle **115.87 MB/s** (`35.35s`); under 4 concurrent readers (**247.2 MB/s**, **0** read errors) **109.48 MB/s** (`37.41s`). | [Scrub Throughput](benchmarks/plots/exp7_scrub_throughput.png) |
+
+Run any benchmark and regenerate all plots (see [benchmarks/README.md](benchmarks/README.md) for flags and runtime estimates):
+
+```bash
+.venv/bin/python benchmarks/bench_latency.py
+.venv/bin/python benchmarks/bench_overhead.py
+.venv/bin/python benchmarks/bench_concurrency.py
+.venv/bin/python benchmarks/bench_throughput.py
+.venv/bin/python benchmarks/bench_failure.py
+.venv/bin/python benchmarks/bench_repair.py
+.venv/bin/python benchmarks/bench_scrub.py
+.venv/bin/python benchmarks/plot.py
+```
+
+---
+
+## Cluster Admin & Client Web Dashboard (`/ui`)
+
+When the stack starts (`docker compose up -d --build`), the compiled React + TypeScript dashboard is served directly by the controller at **`http://localhost:8000/ui/`**:
+
+- **Overview (`/ui/`):** Live 4-worker status cards (client-side heartbeat countdown anchored to `server_time`, disk usage, `DEAD` grace-period countdown), stacked replication health bar, logical vs raw byte footprint, `"Run Scrub Now"`, CLI demo command snippets, and latest 5 transition events.
+- **Objects (`/ui/objects`):** Multi-file drag-and-drop upload queue (`XMLHttpRequest` progress bars + per-file cancel + custom metadata), server-side paginated object catalog, direct stream download links, and delete confirmation modal.
+- **Object Detail & Chunk Map (`/ui/objects/:id`):** System metadata, inline `PATCH` custom metadata editor, and interactive 1.5s-polling CSS grid Chunk Map showing per-chunk worker colors, `DEAD`/`CORRUPT`/missing replica overlays, worker filters, and `1,024`-chunk pagination.
+- **Events Feed (`/ui/events`):** Incremental `?since=<id>` stream of state-transition events (`worker_dead`, `worker_alive`, `repair_started`, `repair_completed`, `replica_corrupt`, `scrub_finished`, `object_committed`, `object_deleted`, `object_rolled_back`) with severity/type filters and pause/auto-scroll toggles.
+
+### Frontend Development Workflow
+
+```bash
+# 1. Regenerate TypeScript types from FastAPI OpenAPI schema
+npm --prefix frontend run gen:api
+
+# 2. Start Vite dev server on :5173 (proxies /api -> localhost:8000)
+VITE_API_BASE="" npm --prefix frontend run dev
+
+# 3. Production static build (also executed automatically inside controller/Dockerfile)
+npm --prefix frontend run build
+```
+
+---
+
 ## Project Structure & Documentation
 
 ```text
@@ -239,13 +298,22 @@ python3 scripts/check_invariants.py
 ├── docker-compose.yml          # 1 controller + 4 stateful chunk workers
 ├── pytest.ini
 ├── requirements-dev.txt
+├── benchmarks/                 # Reproducible performance & fault-tolerance suite
+│   ├── README.md               # Benchmark methodology, commands & summary
+│   ├── harness.py              # Timing, stats, provenance CSV writer & cluster helpers
+│   ├── bench_*.py              # Experiments 1..8 runners
+│   ├── plot.py                 # 300-DPI Matplotlib plotting suite
+│   ├── results/                # Timestamped & *_latest.csv benchmark results
+│   └── plots/                  # Generated PNG charts
 ├── client/                     # CLI tool (client/objstore.py)
-├── controller/                 # FastAPI coordinator, SQLite WAL DB, repair & scrub loops
+├── controller/                 # FastAPI coordinator, SQLite WAL DB, repair, scrub & admin_api.py
+├── frontend/                   # React + Vite + TypeScript + Tailwind + TanStack Query UI
 ├── worker/                     # Stateful chunk worker daemon & atomic disk engine
 ├── demo/files/                 # Demo fixtures (generated by scripts/ensure_demo_files.py)
 ├── docs/
 │   ├── REPORT.md               # Full technical engineering report & empirical results
 │   ├── TESTING.md              # Unit, integration, and manual testing guide
+│   ├── TEAM_SPLIT.md           # Two-person ownership, demo split & viva Q&A map
 │   ├── design.md               # Condensed Day-1 design summary
 │   ├── diagrams/               # Mermaid architecture, sequence, and state diagrams
 │   └── archive/                # Historical milestone notes & architecture design logs
@@ -255,8 +323,10 @@ python3 scripts/check_invariants.py
     └── integration/            # Live cluster contract, fault-tolerance & stress suites
 ```
 
+- [Benchmark Suite & Methodology](benchmarks/README.md)
 - [Technical Engineering Report](docs/REPORT.md)
 - [Testing & Verification Guide](docs/TESTING.md)
+- [Two-Person Ownership & Evaluation Split](docs/TEAM_SPLIT.md)
 - [Condensed Design Doc](docs/design.md)
 - [Architecture & Sequence Diagrams](docs/diagrams/)
 
