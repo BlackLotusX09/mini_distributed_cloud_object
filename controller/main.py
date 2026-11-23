@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple
 
 from fastapi import FastAPI, Request
 
+import admin_api
 import db
 import settings as settings_mod
 from errors import ApiError, install_handlers
@@ -162,6 +163,7 @@ def create_app(cfg: Optional[settings_mod.Settings] = None, worker_transport=Non
     app = FastAPI(title="Object Store Controller", lifespan=lifespan)
     app.state.cfg = cfg
     app.include_router(objects_router)
+    admin_api.install_admin(app)
 
     install_handlers(app)  # centralized exception -> JSON registry (errors.py)
     app.add_middleware(RequestIdMiddleware)

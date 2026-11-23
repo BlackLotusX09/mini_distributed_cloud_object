@@ -31,3 +31,7 @@ demo/files/*.bin
 demo/files/sample.txt
 demo/files/sample.png
 demo/files/archive.zip
+
+# Frontend build & dependencies
+frontend/node_modules/
+frontend/dist/

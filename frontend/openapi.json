@@ -1,0 +1,773 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Object Store Controller",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/objects": {
+      "get": {
+        "summary": "List Objects",
+        "operationId": "list_objects_api_v1_objects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload Object",
+        "operationId": "upload_object_api_v1_objects_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/objects/{object_id}": {
+      "get": {
+        "summary": "Download Object",
+        "operationId": "download_object_api_v1_objects__object_id__get",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Object",
+        "operationId": "delete_object_api_v1_objects__object_id__delete",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/objects/{object_id}/metadata": {
+      "get": {
+        "summary": "Get Metadata",
+        "operationId": "get_metadata_api_v1_objects__object_id__metadata_get",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Metadata",
+        "operationId": "patch_metadata_api_v1_objects__object_id__metadata_patch",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "summary": "Admin Overview",
+        "operationId": "admin_overview_api_v1_admin_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/events": {
+      "get": {
+        "summary": "Admin Events",
+        "operationId": "admin_events_api_v1_admin_events_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Since"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/workers/register": {
+      "post": {
+        "summary": "Register",
+        "operationId": "register_internal_workers_register_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/workers/heartbeat": {
+      "post": {
+        "summary": "Heartbeat",
+        "operationId": "heartbeat_internal_workers_heartbeat_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/workers": {
+      "get": {
+        "summary": "Admin Workers",
+        "operationId": "admin_workers_api_v1_admin_workers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/placement-test": {
+      "get": {
+        "summary": "Placement Test",
+        "operationId": "placement_test_api_v1_admin_placement_test_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/replication": {
+      "get": {
+        "summary": "Admin Replication",
+        "operationId": "admin_replication_api_v1_admin_replication_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/objects/{object_id}/chunks": {
+      "get": {
+        "summary": "Admin Object Chunks",
+        "operationId": "admin_object_chunks_api_v1_admin_objects__object_id__chunks_get",
+        "parameters": [
+          {
+            "name": "object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/scrub": {
+      "post": {
+        "summary": "Admin Scrub",
+        "operationId": "admin_scrub_api_v1_admin_scrub_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClusterConfig": {
+        "properties": {
+          "replication_factor": {
+            "type": "integer",
+            "title": "Replication Factor"
+          },
+          "chunk_size": {
+            "type": "integer",
+            "title": "Chunk Size"
+          },
+          "heartbeat_timeout": {
+            "type": "number",
+            "title": "Heartbeat Timeout"
+          },
+          "liveness_check_interval": {
+            "type": "number",
+            "title": "Liveness Check Interval"
+          },
+          "repair_grace_period": {
+            "type": "number",
+            "title": "Repair Grace Period"
+          },
+          "repair_interval": {
+            "type": "number",
+            "title": "Repair Interval"
+          },
+          "scrub_interval": {
+            "type": "number",
+            "title": "Scrub Interval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "replication_factor",
+          "chunk_size",
+          "heartbeat_timeout",
+          "liveness_check_interval",
+          "repair_grace_period",
+          "repair_interval",
+          "scrub_interval"
+        ],
+        "title": "ClusterConfig"
+      },
+      "EventItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "ts": {
+            "type": "number",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ts",
+          "type",
+          "severity",
+          "message"
+        ],
+        "title": "EventItem"
+      },
+      "EventsResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventItem"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "latest_id": {
+            "type": "integer",
+            "title": "Latest Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "latest_id"
+        ],
+        "title": "EventsResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OverviewReplication": {
+        "properties": {
+          "total_chunks": {
+            "type": "integer",
+            "title": "Total Chunks"
+          },
+          "healthy": {
+            "type": "integer",
+            "title": "Healthy"
+          },
+          "under_replicated": {
+            "type": "integer",
+            "title": "Under Replicated"
+          },
+          "unavailable": {
+            "type": "integer",
+            "title": "Unavailable"
+          },
+          "corrupt": {
+            "type": "integer",
+            "title": "Corrupt"
+          },
+          "corrupt_replicas": {
+            "type": "integer",
+            "title": "Corrupt Replicas"
+          },
+          "unrecoverable": {
+            "type": "integer",
+            "title": "Unrecoverable"
+          },
+          "over_replicated": {
+            "type": "integer",
+            "title": "Over Replicated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_chunks",
+          "healthy",
+          "under_replicated",
+          "unavailable",
+          "corrupt",
+          "corrupt_replicas",
+          "unrecoverable",
+          "over_replicated"
+        ],
+        "title": "OverviewReplication"
+      },
+      "OverviewResponse": {
+        "properties": {
+          "server_time": {
+            "type": "number",
+            "title": "Server Time"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewWorker"
+            },
+            "type": "array",
+            "title": "Workers"
+          },
+          "replication": {
+            "$ref": "#/components/schemas/OverviewReplication"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/OverviewTotals"
+          },
+          "last_scrub": {
+            "$ref": "#/components/schemas/ScrubSummary"
+          },
+          "config": {
+            "$ref": "#/components/schemas/ClusterConfig"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_time",
+          "workers",
+          "replication",
+          "totals",
+          "last_scrub",
+          "config"
+        ],
+        "title": "OverviewResponse"
+      },
+      "OverviewTotals": {
+        "properties": {
+          "objects": {
+            "type": "integer",
+            "title": "Objects"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "logical_bytes": {
+            "type": "integer",
+            "title": "Logical Bytes"
+          },
+          "raw_bytes": {
+            "type": "integer",
+            "title": "Raw Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "objects",
+          "chunks",
+          "logical_bytes",
+          "raw_bytes"
+        ],
+        "title": "OverviewTotals"
+      },
+      "OverviewWorker": {
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "title": "Worker Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_heartbeat": {
+            "type": "number",
+            "title": "Last Heartbeat"
+          },
+          "last_heartbeat_age": {
+            "type": "number",
+            "title": "Last Heartbeat Age"
+          },
+          "dead_since": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Since"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count"
+          },
+          "valid_replicas": {
+            "type": "integer",
+            "title": "Valid Replicas"
+          },
+          "corrupt_replicas": {
+            "type": "integer",
+            "title": "Corrupt Replicas"
+          },
+          "pending_delete_replicas": {
+            "type": "integer",
+            "title": "Pending Delete Replicas"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "worker_id",
+          "name",
+          "address",
+          "status",
+          "last_heartbeat",
+          "last_heartbeat_age",
+          "chunk_count",
+          "valid_replicas",
+          "corrupt_replicas",
+          "pending_delete_replicas",
+          "used_bytes"
+        ],
+        "title": "OverviewWorker"
+      },
+      "ScrubSummary": {
+        "properties": {
+          "last_scrub_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scrub At"
+          },
+          "chunks_checked": {
+            "type": "integer",
+            "title": "Chunks Checked"
+          },
+          "corrupt_found": {
+            "type": "integer",
+            "title": "Corrupt Found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunks_checked",
+          "corrupt_found"
+        ],
+        "title": "ScrubSummary"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -8,7 +8,9 @@ x-worker: &worker
 
 services:
   controller:
-    build: ./controller
+    build:
+      context: .
+      dockerfile: controller/Dockerfile
     container_name: controller
     restart: unless-stopped
     ports:
@@ -19,6 +21,7 @@ services:
       LIVENESS_CHECK_INTERVAL: "3"
       REPLICATION_FACTOR: "2"
       CHUNK_SIZE: "1048576"
+      ADMIN_ENABLED: "true"
     volumes:
       - controller-data:/data
     networks:
